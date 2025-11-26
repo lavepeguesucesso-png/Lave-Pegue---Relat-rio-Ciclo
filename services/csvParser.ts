@@ -3,18 +3,20 @@ import { Transaction, CycleType, DashboardMetadata } from '../types';
 export const parseCurrency = (value: string): number => {
   if (!value) return 0;
   // Handle "R$ 15,90", "15,9", "15.9", "15"
-  // Remove quotes, R$, whitespace, dots (thousands), then replace comma with dot
+  // Remove quotes, R$, whitespace
   let clean = value.replace(/['"]/g, '').replace('R$', '').trim();
   
-  // If format is 1.234,56 (Brazilian thousands), remove dot, swap comma
-  if (clean.includes(',') && clean.includes('.')) {
-    clean = clean.replace(/\./g, '').replace(',', '.');
-  } else if (clean.includes(',')) {
-    // If just comma decimal "15,9"
-    clean = clean.replace(',', '.');
+  // Remove thousands separator (.) if present along with decimal (,)
+  // Example: 1.200,50 -> 1200,50
+  if (clean.includes('.') && clean.includes(',')) {
+    clean = clean.replace(/\./g, '');
   }
   
-  return parseFloat(clean) || 0;
+  // Replace comma with dot for JS parseFloat
+  clean = clean.replace(',', '.');
+  
+  const num = parseFloat(clean);
+  return isNaN(num) ? 0 : num;
 };
 
 export const determineCycleType = (productName: string): CycleType => {
@@ -50,7 +52,7 @@ const isLineEmpty = (line: string): boolean => {
 };
 
 const detectFormat = (lines: string[]): CsvFormat => {
-  // Scan first 5000 lines for characteristic headers (increased depth for empty lines)
+  // Scan lines looking for specific headers, ignoring garbage
   const limit = Math.min(lines.length, 5000);
   for (let i = 0; i < limit; i++) {
     const line = lines[i];
@@ -67,15 +69,13 @@ const detectFormat = (lines: string[]): CsvFormat => {
 };
 
 const extractPeriod = (lines: string[]): string => {
-  // Scan first 5000 lines for metadata (increased depth)
   const limit = Math.min(lines.length, 5000);
   for (let i = 0; i < limit; i++) {
     if (lines[i].includes("Vendas de")) {
       const parts = lines[i].split(",");
-      // Filter out empty parts to find the text part
       const periodPart = parts.find(p => p.includes("Vendas de"));
       if (periodPart) {
-        return periodPart.replace("Vendas de ", "").replace(" ate ", " - ").trim();
+        return periodPart.replace("Vendas de ", "").replace(" ate ", " - ").replace(/['"]/g, "").trim();
       }
     }
   }
@@ -83,7 +83,11 @@ const extractPeriod = (lines: string[]): string => {
 };
 
 export const parseCSV = (csvText: string): ParseResult => {
-  const lines = csvText.split(/\r\n|\n/);
+  // 1. Aggressive Pre-cleaning
+  // Remove empty lines and lines that are just commas before doing anything
+  const rawLines = csvText.split(/\r\n|\n/);
+  const lines = rawLines.filter(line => !isLineEmpty(line));
+
   const format = detectFormat(lines);
   const period = extractPeriod(lines);
   const transactions: Transaction[] = [];
@@ -91,9 +95,8 @@ export const parseCSV = (csvText: string): ParseResult => {
 
   // Determine Header Row Index dynamically
   let headerIndex = -1;
-  const limit = Math.min(lines.length, 5000);
   
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < lines.length; i++) {
     // Strong signal for header row in both formats
     if (lines[i].includes('Data') && lines[i].includes('Hora')) {
       headerIndex = i;
@@ -111,8 +114,6 @@ export const parseCSV = (csvText: string): ParseResult => {
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i].trim();
     
-    // Skip empty lines or lines that are just commas
-    if (isLineEmpty(line)) continue;
     if (line.startsWith("Total")) continue;
 
     const cols = splitCsvLine(line);
@@ -126,21 +127,14 @@ export const parseCSV = (csvText: string): ParseResult => {
 
     if (format === CsvFormat.SELF_SERVICE) {
       // Self Service Mapping
-      // Index 6: "Mola"/"Produto" (e.g., "4 - LAVA - 04") -> Used for Machine Name & Cycle Type
-      // Index 9: "Total Venda"
-      // Index 10: "Data"
-      // Index 11: "Hora"
-      // Index 4: "Pagamento"
       if (cols.length < 12) continue;
-      machineRaw = cols[6]?.replace(/['"]/g, '').trim();
-      amountRaw = cols[9]?.replace(/['"]/g, '').trim();
-      dateRaw = cols[10]?.replace(/['"]/g, '').trim();
-      timeRaw = cols[11]?.replace(/['"]/g, '').trim();
-      paymentRaw = cols[4]?.replace(/['"]/g, '').trim();
+      machineRaw = cols[6]?.replace(/['"]/g, '').trim() || "";
+      amountRaw = cols[9]?.replace(/['"]/g, '').trim() || "0";
+      dateRaw = cols[10]?.replace(/['"]/g, '').trim() || "";
+      timeRaw = cols[11]?.replace(/['"]/g, '').trim() || "00:00:00";
+      paymentRaw = cols[4]?.replace(/['"]/g, '').trim() || "";
 
-      // Try extract Unit Name from Metadata lines if not set
       if (unitName === "Unidade Desconhecida" && lines.length > 0) {
-        // Scan a bit to find Operator
         for(let j=0; j<Math.min(lines.length, 50); j++) {
             if (lines[j].startsWith("Operador:")) {
                 const parts = splitCsvLine(lines[j]);
@@ -154,39 +148,29 @@ export const parseCSV = (csvText: string): ParseResult => {
 
     } else if (format === CsvFormat.ATTENDANT) {
       // Attendant Mapping
-      // Index 0: "Cliente" (Contains Unit Name repeated)
-      // Index 4: "Nome Terminal" (e.g., "LAVA - 14")
-      // Index 5: "Pagamento"
-      // Index 8: "Venda (R$)"
-      // Index 12: "Data"
-      // Index 13: "Hora"
       if (cols.length < 14) continue;
       
       // Valid row check: must have a date in col 12
       if (!cols[12] || !cols[12].includes('/')) continue;
 
-      machineRaw = cols[4]?.replace(/['"]/g, '').trim();
-      amountRaw = cols[8]?.replace(/['"]/g, '').trim();
-      dateRaw = cols[12]?.replace(/['"]/g, '').trim();
-      timeRaw = cols[13]?.replace(/['"]/g, '').trim();
-      paymentRaw = cols[5]?.replace(/['"]/g, '').trim();
+      machineRaw = cols[4]?.replace(/['"]/g, '').trim() || "";
+      amountRaw = cols[8]?.replace(/['"]/g, '').trim() || "0";
+      dateRaw = cols[12]?.replace(/['"]/g, '').trim() || "";
+      timeRaw = cols[13]?.replace(/['"]/g, '').trim() || "00:00:00";
+      paymentRaw = cols[5]?.replace(/['"]/g, '').trim() || "";
 
-      // Extract Unit Name from the first valid data row
+      // Extract Unit Name from the first valid data row (Col 0)
       if (unitName === "Unidade Desconhecida" && cols[0]) {
         const potentialName = cols[0].replace(/['"]/g, "").trim();
-        if (potentialName && potentialName !== "Cliente") {
+        if (potentialName && potentialName.toLowerCase() !== "cliente") {
             unitName = potentialName;
         }
       }
     } else {
-      // Unknown format, skip
       continue;
     }
 
     // --- Common Processing ---
-
-    // Strict check: Must have a valid date (dd/mm/yyyy)
-    // Sometimes headers repeat or garbage data exists
     if (!dateRaw || !dateRaw.match(/^\d{2}\/\d{2}\/\d{4}$/)) continue;
     
     const amount = parseCurrency(amountRaw);
@@ -198,12 +182,12 @@ export const parseCSV = (csvText: string): ParseResult => {
     if (dateParts.length !== 3) continue;
 
     const jsDate = new Date(
-      parseInt(dateParts[2]),
-      parseInt(dateParts[1]) - 1,
-      parseInt(dateParts[0]),
-      parseInt(timeParts[0] || '0'),
-      parseInt(timeParts[1] || '0'),
-      parseInt(timeParts[2] || '0')
+      parseInt(dateParts[2], 10),
+      parseInt(dateParts[1], 10) - 1,
+      parseInt(dateParts[0], 10),
+      parseInt(timeParts[0] || '0', 10),
+      parseInt(timeParts[1] || '0', 10),
+      parseInt(timeParts[2] || '0', 10)
     );
 
     transactions.push({

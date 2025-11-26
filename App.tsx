@@ -110,14 +110,22 @@ const App: React.FC = () => {
   // Trigger browser print when isPrinting becomes true
   useEffect(() => {
     if (isPrinting && exportOptions) {
-      // Increased delay to 1000ms to allow Recharts to fully render in the off-screen container
+      // Delay to allow DOM to render charts in the overlay
       const timer = setTimeout(() => {
         window.print();
-        // Reset state after print dialog closes
+      }, 1000); // 1 second delay for chart animation/rendering
+
+      const handleAfterPrint = () => {
         setIsPrinting(false);
         setExportOptions(null);
-      }, 1000);
-      return () => clearTimeout(timer);
+      };
+
+      window.addEventListener('afterprint', handleAfterPrint);
+
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('afterprint', handleAfterPrint);
+      };
     }
   }, [isPrinting, exportOptions]);
 
@@ -146,16 +154,21 @@ const App: React.FC = () => {
         hasAttendant={!!attendantData}
       />
 
-      {/* Hidden Print Report Container */}
+      {/* Print Overlay Container 
+          Visible only when isPrinting is true. 
+          This renders ON TOP of the current UI, ensuring standard DOM layout for charts.
+      */}
       {isPrinting && exportOptions && (
-        <FullReport 
-          selfServiceData={selfServiceData} 
-          attendantData={attendantData} 
-          options={exportOptions} 
-        />
+        <div className="print-overlay">
+          <FullReport 
+            selfServiceData={selfServiceData} 
+            attendantData={attendantData} 
+            options={exportOptions} 
+          />
+        </div>
       )}
 
-      {/* Main Application Interface (Hidden when printing) */}
+      {/* Main Application Interface (Hidden via CSS @media print) */}
       <div className="no-print">
         {!hasData ? (
           <div className="container mx-auto">

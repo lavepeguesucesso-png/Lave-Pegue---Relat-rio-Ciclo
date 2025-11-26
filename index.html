@@ -17,57 +17,72 @@
 }
 </script>
 <style>
+  /* Screen styles */
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Print Overlay Strategy:
+     Instead of hiding content off-screen, we overlay the print content 
+     on top of the app when printing is active. This ensures charting libraries
+     can measure the viewport correctly.
+  */
+  .print-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: white;
+    z-index: 9999;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
   @media print {
     body {
       -webkit-print-color-adjust: exact !important;
       print-color-adjust: exact !important;
       background-color: white !important;
+      overflow: visible !important;
     }
     
-    /* Hide everything by default in print mode */
+    /* Hide the interactive app completely */
     .no-print {
       display: none !important;
     }
 
-    /* Only show specific print container */
-    .print-only {
-      display: block !important;
+    /* Ensure the print container is visible and resets positioning */
+    .print-overlay {
       position: static !important;
-      visibility: visible !important;
-      left: 0 !important;
-      top: 0 !important;
-      width: 100% !important;
+      z-index: auto !important;
+      padding: 0 !important;
+      overflow: visible !important;
+      height: auto !important;
     }
 
     /* Page breaks */
     .page-break {
       break-after: page;
+      page-break-after: always;
     }
 
-    /* Remove shadows and border radiuses for cleaner print */
-    .shadow-sm, .shadow-lg {
+    /* Avoid breaking inside cards/charts */
+    .break-inside-avoid {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    /* Remove shadows/borders for cleaner ink usage */
+    .shadow-sm, .shadow-lg, .shadow-2xl {
       box-shadow: none !important;
     }
     
-    /* Ensure charts have height */
+    /* Ensure charts preserve their height */
     .recharts-responsive-container {
       min-height: 300px !important;
     }
-  }
-
-  /* Screen styles for the print container 
-     CRITICAL: Do NOT use display: none here. 
-     Recharts needs dimensions to render. 
-     We position it off-screen instead.
-  */
-  .print-only {
-    position: absolute;
-    top: 0;
-    left: -10000px; /* Move off-screen */
-    width: 1024px; /* Fixed width to ensure charts render consistently */
-    visibility: hidden; /* Hide visually but keep in DOM for layout */
-    height: auto;
-    overflow: visible;
   }
 </style>
 </head>

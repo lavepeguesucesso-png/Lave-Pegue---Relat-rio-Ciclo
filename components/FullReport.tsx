@@ -17,10 +17,10 @@ interface FullReportProps {
 
 export const FullReport: React.FC<FullReportProps> = ({ selfServiceData, attendantData, options }) => {
   return (
-    <div className="print-only w-full bg-white">
+    <div className="w-full bg-white min-h-screen">
       {/* Self Service Section */}
       {options.includeSelf && selfServiceData && (
-        <div className="page-break">
+        <div className="page-break mb-8">
           <Dashboard 
             transactions={selfServiceData.transactions} 
             metadata={selfServiceData.metadata} 
@@ -32,7 +32,7 @@ export const FullReport: React.FC<FullReportProps> = ({ selfServiceData, attenda
 
       {/* Attendant Section */}
       {options.includeAttendant && attendantData && (
-        <div className="page-break">
+        <div className="page-break mb-8">
           <Dashboard 
             transactions={attendantData.transactions} 
             metadata={attendantData.metadata} 
@@ -44,7 +44,7 @@ export const FullReport: React.FC<FullReportProps> = ({ selfServiceData, attenda
 
       {/* Comparative Section */}
       {options.includeComparative && selfServiceData && attendantData && (
-        <div className="page-break">
+        <div className="page-break mb-8">
           <ComparativeView 
             selfServiceTransactions={selfServiceData.transactions}
             attendantTransactions={attendantData.transactions}
@@ -55,7 +55,7 @@ export const FullReport: React.FC<FullReportProps> = ({ selfServiceData, attenda
 
       {/* Financial Section */}
       {options.includeFinancial && (
-        <div className="page-break">
+        <div className="page-break mb-8">
           <RevenueDashboard
             selfServiceTransactions={selfServiceData?.transactions || []}
             attendantTransactions={attendantData?.transactions || []}
